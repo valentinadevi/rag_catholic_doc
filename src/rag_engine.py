@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.retrievers import QueryFusionRetriever
-from llama_index.core.schema import BaseNode, NodeWithScore
+from llama_index.core.schema import BaseNode, NodeWithScore, TextNode
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 from llama_index.llms.google_genai import GoogleGenAI
 from llama_index.retrievers.bm25 import BM25Retriever
@@ -191,23 +191,54 @@ def create_embedding_model(api_key: str) -> GoogleGenAIEmbedding:
     )
 
 
-def load_nodes_from_pickle(pickle_path: Path) -> list[BaseNode]:
-    """Memuat daftar nodes dari ./chroma_db/nodes.pkl untuk BM25Retriever."""
-    if not pickle_path.exists():
-        raise FileNotFoundError(
-            f"File {pickle_path} tidak ditemukan. Jalankan 'python src/ingest.py' terlebih dahulu."
+def load_or_rebuild_nodes(pickle_path: Path, chroma_collection: Any) -> list[BaseNode]:
+    """Memuat nodes dari ./chroma_db/nodes.pkl, atau merekonstruksinya dari ChromaDB jika belum ada."""
+    if pickle_path.exists():
+        with pickle_path.open("rb") as file:
+            nodes = pickle.load(file)
+        if isinstance(nodes, list) and nodes:
+            logger.info("Berhasil memuat %d nodes dari %s.", len(nodes), pickle_path)
+            return nodes
+        logger.warning("%s kosong/tidak valid, merekonstruksi ulang dari ChromaDB...", pickle_path)
+    else:
+        logger.warning(
+            "%s tidak ditemukan. Merekonstruksi daftar nodes langsung dari ChromaDB (tanpa panggilan API)...",
+            pickle_path,
         )
 
-    with pickle_path.open("rb") as file:
-        nodes = pickle.load(file)
+    results = chroma_collection.get(include=["documents", "metadatas"])
+    ids = results.get("ids") or []
+    documents = results.get("documents") or []
+    metadatas = results.get("metadatas") or []
 
-    if not isinstance(nodes, list) or not nodes:
+    rebuilt_nodes: list[BaseNode] = []
+    for node_id, doc_text, meta in zip(ids, documents, metadatas):
+        if not doc_text:
+            continue
+        rebuilt_nodes.append(
+            TextNode(
+                id_=str(node_id),
+                text=str(doc_text),
+                metadata=dict(meta or {}),
+            )
+        )
+
+    if not rebuilt_nodes:
         raise ValueError(
-            f"Isi {pickle_path} kosong atau tidak valid. Jalankan ulang 'python src/ingest.py --reset'."
+            "ChromaDB tidak memiliki teks dokumen yang dapat direkonstruksi. "
+            "Jalankan 'python src/ingest.py --reset' terlebih dahulu."
         )
 
-    logger.info("Berhasil memuat %d nodes dari %s.", len(nodes), pickle_path)
-    return nodes
+    pickle_path.parent.mkdir(parents=True, exist_ok=True)
+    with pickle_path.open("wb") as file:
+        pickle.dump(rebuilt_nodes, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    logger.info(
+        "Berhasil merekonstruksi & menyimpan %d nodes ke %s.",
+        len(rebuilt_nodes),
+        pickle_path,
+    )
+    return rebuilt_nodes
 
 
 class PastoralRAGEngine:
@@ -235,8 +266,9 @@ class PastoralRAGEngine:
         existing_collections = [col.name for col in chroma_client.list_collections()]
         if COLLECTION_NAME not in existing_collections:
             raise ValueError(
-                f"Koleksi ChromaDB '{COLLECTION_NAME}' belum ada di {CHROMA_DB_DIR}. "
-                "Jalankan 'python src/ingest.py' terlebih dahulu."
+                f"Koleksi ChromaDB '{COLLECTION_NAME}' belum ada di {CHROMA_DB_DIR} "
+                f"(koleksi tersedia: {existing_collections}). "
+                "Jalankan 'python src/ingest.py --reset' terlebih dahulu."
             )
 
         chroma_collection = chroma_client.get_collection(name=COLLECTION_NAME)
@@ -255,8 +287,8 @@ class PastoralRAGEngine:
         )
         vector_retriever = vector_index.as_retriever(similarity_top_k=SIMILARITY_TOP_K)
 
-        # 2. Muat nodes.pkl dan inisialisasi BM25Retriever
-        nodes = load_nodes_from_pickle(NODES_PICKLE_PATH)
+        # 2. Muat nodes.pkl (atau rekonstruksi otomatis dari ChromaDB) & inisialisasi BM25Retriever
+        nodes = load_or_rebuild_nodes(NODES_PICKLE_PATH, chroma_collection)
         bm25_retriever = BM25Retriever.from_defaults(
             nodes=nodes,
             similarity_top_k=SIMILARITY_TOP_K,

@@ -18,6 +18,7 @@ from llama_index.core.schema import BaseNode, Document
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
+# Konfigurasi logging terminal agar progres terbaca jelas
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(message)s",
@@ -25,6 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ingest")
 
+# Konstanta path dan konfigurasi RAG
 BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_DATA_DIR = BASE_DIR / "data" / "raw"
 METADATA_FILE = BASE_DIR / "data" / "metadata.json"
@@ -32,6 +34,7 @@ CHROMA_DB_DIR = BASE_DIR / "chroma_db"
 NODES_PICKLE_PATH = CHROMA_DB_DIR / "nodes.pkl"
 COLLECTION_NAME = "pastoral_katolik"
 
+# Model embedding prioritas: mencoba text-embedding-004 lalu fallback otomatis jika 404 (deprecated di v1beta)
 EMBEDDING_CANDIDATE_MODELS = (
     "models/text-embedding-004",
     "gemini-embedding-001",
@@ -127,6 +130,18 @@ def load_api_key() -> str:
     return api_key
 
 
+def is_permission_or_key_error(exc: Exception) -> bool:
+    """Mendeteksi error 403 PERMISSION_DENIED atau 400 API_KEY_INVALID."""
+    error_text = str(exc).lower()
+    status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    return (
+        status_code in (400, 403)
+        or "permission_denied" in error_text
+        or "api_key_invalid" in error_text
+        or "403" in error_text
+    )
+
+
 def create_embedding_model(api_key: str) -> tuple[GoogleGenAIEmbedding, str]:
     """Menginisialisasi GoogleGenAIEmbedding dan memvalidasi model aktif di Gemini API."""
     env_model = os.getenv("EMBEDDING_MODEL", "").strip()
@@ -158,6 +173,15 @@ def create_embedding_model(api_key: str) -> tuple[GoogleGenAIEmbedding, str]:
                     candidate_model,
                 )
                 continue
+            if is_permission_or_key_error(exc):
+                logger.error(
+                    "[AKSES DITOLAK / API KEY] Project Google Cloud dari API key Anda tidak memiliki akses "
+                    "ke Gemini API (403/400). Jika pesan menyebut 'free tier is not available for this project', "
+                    "buat API key di project baru via https://aistudio.google.com/apikey (akun Gmail pribadi) "
+                    "atau aktifkan billing di https://aistudio.google.com/billing.\nDetail: %s",
+                    exc,
+                )
+                sys.exit(1)
             raise
 
     logger.error(
@@ -487,6 +511,7 @@ def main() -> None:
     metadata_map = load_metadata_map(METADATA_FILE)
     documents = load_and_enrich_documents(RAW_DATA_DIR, metadata_map)
     nodes = split_documents_into_nodes(documents)
+    save_nodes_pickle(nodes, NODES_PICKLE_PATH)
 
     index_nodes_to_chroma(
         nodes=nodes,
@@ -496,7 +521,6 @@ def main() -> None:
         collection_name=COLLECTION_NAME,
         reset_collection=args.reset,
     )
-    save_nodes_pickle(nodes, NODES_PICKLE_PATH)
 
     elapsed = time.time() - start_time
     logger.info("=== Pipeline Ingest Selesai dalam %.2f detik ===", elapsed)
