@@ -38,7 +38,11 @@ logger = logging.getLogger("evaluate")
 TEST_DATASET_PATH = BASE_DIR / "data" / "test_dataset.json"
 OUTPUT_EXCEL_PATH = BASE_DIR / "hasil_evaluasi_ragas.xlsx"
 
-EVAL_LLM_MODEL = "gemini-2.5-flash"
+EVAL_LLM_CANDIDATES = (
+    "gemini-2.5-flash",
+    "gemini-3.8-flash",
+    "gemini-4-hydrogen",
+)
 EVAL_EMBEDDING_CANDIDATES = (
     "models/text-embedding-004",
     "models/gemini-embedding-001",
@@ -167,12 +171,47 @@ def create_ragas_evaluators(
     api_key: str,
 ) -> tuple[Any, Any]:
     """Menyiapkan evaluator LLM & Embeddings Gemini yang dibungkus wrapper RAGAS."""
-    llm = ChatGoogleGenerativeAI(
-        model=EVAL_LLM_MODEL,
-        google_api_key=api_key,
-        temperature=0.0,
-    )
-    evaluator_llm = LangchainLLMWrapper(llm)
+    env_llm = os.getenv("LLM_MODEL", "").strip()
+    llm_candidates = [env_llm] if env_llm else []
+    for model_name in EVAL_LLM_CANDIDATES:
+        if model_name not in llm_candidates:
+            llm_candidates.append(model_name)
+
+    evaluator_llm = None
+    last_llm_error: Exception | None = None
+    for candidate_llm in llm_candidates:
+        logger.info("Menguji LLM evaluator RAGAS: %s...", candidate_llm)
+        llm = ChatGoogleGenerativeAI(
+            model=candidate_llm,
+            google_api_key=api_key,
+            temperature=0.0,
+        )
+        try:
+            retry_with_backoff(
+                func=lambda m=llm: m.invoke("Balas singkat: OK"),
+                action_label=f"uji LLM evaluator {candidate_llm}",
+            )
+            logger.info("LLM evaluator aktif: %s", candidate_llm)
+            evaluator_llm = LangchainLLMWrapper(llm)
+            break
+        except Exception as exc:
+            last_llm_error = exc
+            if is_model_not_found_error(exc):
+                logger.warning(
+                    "Model LLM evaluator '%s' mengembalikan 404 pada API, "
+                    "mencoba fallback berikutnya...",
+                    candidate_llm,
+                )
+                continue
+            raise
+
+    if evaluator_llm is None:
+        logger.error(
+            "Gagal menginisialisasi model LLM evaluator (%s). Detail: %s",
+            ", ".join(llm_candidates),
+            last_llm_error,
+        )
+        sys.exit(1)
 
     env_embed_model = os.getenv("EMBEDDING_MODEL", "").strip()
     candidates = [env_embed_model] if env_embed_model else []

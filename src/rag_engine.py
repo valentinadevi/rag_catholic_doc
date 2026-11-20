@@ -32,7 +32,11 @@ CHROMA_DB_DIR = BASE_DIR / "chroma_db"
 NODES_PICKLE_PATH = CHROMA_DB_DIR / "nodes.pkl"
 COLLECTION_NAME = "pastoral_katolik"
 
-LLM_MODEL_NAME = "gemini-2.5-flash"
+LLM_CANDIDATE_MODELS = (
+    "gemini-2.5-flash",
+    "gemini-3.8-flash",
+    "gemini-4-hydrogen",
+)
 LLM_TEMPERATURE = 0.1
 EMBEDDING_CANDIDATE_MODELS = (
     "models/text-embedding-004",
@@ -246,7 +250,7 @@ class PastoralRAGEngine:
 
     def __init__(self) -> None:
         logger.info("Menginisialisasi PastoralRAGEngine...")
-        api_key = load_api_key()
+        self.api_key = load_api_key()
 
         if not CHROMA_DB_DIR.exists():
             raise FileNotFoundError(
@@ -254,10 +258,18 @@ class PastoralRAGEngine:
                 "Jalankan 'python src/ingest.py' terlebih dahulu."
             )
 
-        self.embed_model = create_embedding_model(api_key)
+        self.embed_model = create_embedding_model(self.api_key)
+
+        env_llm = os.getenv("LLM_MODEL", "").strip()
+        self.llm_candidates: list[str] = [env_llm] if env_llm else []
+        for model_name in LLM_CANDIDATE_MODELS:
+            if model_name not in self.llm_candidates:
+                self.llm_candidates.append(model_name)
+
+        self.active_llm_model = self.llm_candidates[0]
         self.llm = GoogleGenAI(
-            model=LLM_MODEL_NAME,
-            api_key=api_key,
+            model=self.active_llm_model,
+            api_key=self.api_key,
             temperature=LLM_TEMPERATURE,
         )
 
@@ -307,7 +319,7 @@ class PastoralRAGEngine:
             "PastoralRAGEngine siap (koleksi='%s', total_vektor=%d, llm='%s').",
             COLLECTION_NAME,
             chroma_collection.count(),
-            LLM_MODEL_NAME,
+            self.active_llm_model,
         )
 
     @staticmethod
@@ -401,18 +413,46 @@ class PastoralRAGEngine:
             ChatMessage(role=MessageRole.USER, content=user_prompt),
         ]
 
-        try:
-            response = retry_with_backoff(
-                func=lambda: self.llm.chat(messages),
-                action_label=f"generasi jawaban LLM ({LLM_MODEL_NAME})",
+        start_idx = self.llm_candidates.index(self.active_llm_model)
+        last_error: Exception | None = None
+        response = None
+
+        for candidate_model in self.llm_candidates[start_idx:]:
+            if candidate_model != self.active_llm_model:
+                self.active_llm_model = candidate_model
+                self.llm = GoogleGenAI(
+                    model=candidate_model,
+                    api_key=self.api_key,
+                    temperature=LLM_TEMPERATURE,
+                )
+
+            try:
+                response = retry_with_backoff(
+                    func=lambda: self.llm.chat(messages),
+                    action_label=f"generasi jawaban LLM ({candidate_model})",
+                )
+                break
+            except Exception as exc:
+                last_error = exc
+                if is_model_not_found_error(exc):
+                    logger.warning(
+                        "Model LLM '%s' mengembalikan 404 (tidak tersedia untuk API key ini). "
+                        "Mencoba model fallback berikutnya...",
+                        candidate_model,
+                    )
+                    continue
+                if is_permission_or_key_error(exc):
+                    raise PermissionError(
+                        "Akses Gemini API ditolak (403/400) saat memanggil LLM. "
+                        "Periksa GEMINI_API_KEY atau billing project Anda."
+                    ) from exc
+                raise
+
+        if response is None:
+            raise RuntimeError(
+                f"Tidak ada model LLM Gemini yang tersedia ({', '.join(self.llm_candidates)}). "
+                f"Detail terakhir: {last_error}"
             )
-        except Exception as exc:
-            if is_permission_or_key_error(exc):
-                raise PermissionError(
-                    "Akses Gemini API ditolak (403/400) saat memanggil LLM. "
-                    "Periksa GEMINI_API_KEY atau billing project Anda."
-                ) from exc
-            raise
 
         answer_text = (response.message.content or "").strip()
         if not answer_text:
