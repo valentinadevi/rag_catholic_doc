@@ -1,0 +1,22 @@
+[
+  {
+    "question": "Siapa saja yang dapat menerima Sakramen Pengurapan Orang Sakit dan kapan waktu yang tepat untuk menerimanya menurut ajaran Gereja Katolik?",
+    "ground_truth": "Sakramen Pengurapan Orang Sakit dapat diberikan kepada setiap umat beriman yang setelah mencapai penggunaan akal budi mulai berada dalam bahaya maut karena sakit atau usia lanjut. Sakramen ini bukan hanya bagi orang yang sudah berada di ambang kematian, melainkan tepat diterima saat seorang beriman mulai terancam bahaya karena penyakit berat atau sebelum menjalani operasi berat, dan dapat diulangi apabila orang sakit tersebut sembuh lalu jatuh sakit berat lagi atau jika sakitnya bertambah parah."
+  },
+  {
+    "question": "Apa saja persyaratan yang harus dipenuhi untuk melangsungkan perkawinan beda agama atau perkawinan campuran dalam Gereja Katolik?",
+    "ground_truth": "Perkawinan antara seorang Katolik dengan orang yang tidak dibaptis membutuhkan dispensasi halangan beda agama (disparitas cultus) dari Ordinaris Wilayah, sedangkan perkawinan dengan orang yang dibaptis bukan Katolik memerlukan izin resmi. Untuk memperoleh izin atau dispensasi tersebut, pihak Katolik harus menyatakan kesediaan menjauhkan bahaya kehilangan iman dan berjanji dengan tulus akan berbuat segala sesuatu agar semua anak dibaptis serta dididik dalam Gereja Katolik, dan pihak non-Katolik harus diberitahu mengenai janji dan kewajiban pihak Katolik tersebut."
+  },
+  {
+    "question": "Bagaimana pandangan Gereja Katolik tentang makna penderitaan manusia dan sikap pastoral mendampingi orang sakit menurut Salvifici Doloris dan Katekismus?",
+    "ground_truth": "Dalam ajaran Gereja Katolik khususnya Salvifici Doloris, penderitaan manusia memperoleh makna penebusan apabila dipersatukan dengan penderitaan dan salib Kristus. Secara pastoral, umat dan pelayan Gereja dipanggil untuk meneladani orang Samaria yang baik hati dengan hadir mendampingi, memberi perhatian penuh kasih, menghibur, serta membantu orang yang menderita agar tidak merasa sendirian dan tetap bertumbuh dalam pengharapan."
+  },
+  {
+    "question": "Bagaimana pendekatan pastoral Gereja terhadap keluarga yang mengalami krisis atau situasi rapuh menurut Seruan Apostolik Amoris Laetitia?",
+    "ground_truth": "Amoris Laetitia menekankan bahwa Gereja harus mendampingi keluarga dalam situasi rapuh dengan sikap bela rasa, kesabaran, pengampunan, dan discernment (penegasan rohani) secara personal serta pastoral. Gereja dipanggil untuk membimbing, mendengarkan, dan mengintegrasikan kembali anggota keluarga yang terluka tanpa mengabaikan ajaran Injil tentang perkawinan dan keluarga, sembari mendorong dialog dan rekonsiliasi."
+  },
+  {
+    "question": "Apa yang dimaksud dengan sakramentali dan bagaimana ketentuan Gereja mengenai pemberkatan benda-benda rohani?",
+    "ground_truth": "Sakramentali adalah tanda-tanda suci yang ditetapkan oleh Gereja untuk menguduskan berbagai keadaan hidup, mempersiapkan manusia menerima buah sakramen, dan memuliakan Allah. Pemberkatan benda-benda rohani termasuk dalam sakramentali yang dipimpin oleh pelayan tertahbis (atau dalam kasus tertentu oleh awam sesuai ketentuan), dan benda-benda yang telah diberkati untuk ibadat ilahi harus diperlakukan dengan hormat serta tidak boleh digunakan untuk tujuan profan atau tidak pantas."
+  }
+]
